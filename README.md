@@ -13,3 +13,9 @@ python -m venv .venv
 
 uv sync
 ```
+
+## Run
+
+```shell
+uv run python ./app/chatbot.py
+```
