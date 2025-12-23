@@ -1,6 +1,6 @@
 [project]
 name = "langgraph-templete"
-version = "1.1.1"
+version = "1.2.0"
 description = "A template for langgraph projects"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -9,3 +9,40 @@ dependencies = [
     "langchain-google-genai>=4.0.0",
     "langgraph>=1.0.4",
 ]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "ruff>=0.14.10",
+]
+
+[tool.mypy]
+strict = true
+
+[tool.ruff]
+exclude = [
+    "__pycache__",
+    ".mypy_cache",
+    ".venv",
+    ".git",
+]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D203", # incorrect-blank-line-before-class
+    "D212", # multi-line-summary-first-line
+    "D400", # missing-trailing-period
+    "D413", # missing-blank-line-after-last-section
+    "D415", # missing-terminal-punctuation
+    "I001", # unsorted-imports
+    "T201", # print
+    "T203", # pprint
+    "PLC0415", # import-outside-top-level
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

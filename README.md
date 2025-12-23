@@ -19,3 +19,25 @@ uv sync
 ```shell
 uv run python ./app/chatbot.py
 ```
+
+## Debug
+
+### Linter
+
+```shell
+uv run ruff check
+uv run ruff check --fix
+```
+
+### Formatter
+
+```shell
+uv run ruff format --check --diff
+uv run ruff format
+```
+
+### Type Checking
+
+```shell
+uv run mypy <file.py>
+```

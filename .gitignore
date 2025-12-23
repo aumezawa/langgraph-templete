@@ -11,3 +11,7 @@ wheels/
 
 # Conceal settings (e.g. API key)
 .env
+
+# Debugging tools' caches
+.mypy_cache
+.ruff_cache
