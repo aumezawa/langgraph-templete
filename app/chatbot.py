@@ -1,7 +1,7 @@
 """
 chatbot.py
 
-Version : 1.1.1
+Version : 1.3.0
 Author  : aumezawa
 """
 
@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from pprint import pprint
 from langchain_core.tools import tool, Tool, BaseTool
 from langchain_core.language_models import BaseChatModel
+from langchain_core.runnables import RunnableConfig
+from langgraph.types import Checkpointer
 from langgraph.graph.state import CompiledStateGraph
 
 ###
@@ -65,14 +67,16 @@ def chatbot_builder(
     *,
     model: BaseChatModel,
     tools: Sequence[BaseTool | Tool],
+    checkpointer: Checkpointer = None,
 ) -> CompiledStateGraph[Any, None, Any, Any]:
     """Create a chatbot graph with tool usage capability."""
-    from langchain_core.messages import ToolMessage
+    from langchain_core.messages import SystemMessage, ToolMessage, HumanMessage
     from langgraph.graph import StateGraph, START, END
     from langgraph.graph.message import add_messages
 
     # Define Node
     node_start = START
+    node_system = "system"
     node_chatbot = "chatbot"
     node_tools = "tools"
     node_end = END
@@ -82,11 +86,30 @@ def chatbot_builder(
 
     # Define State
     class State(TypedDict):
+        query: str
         messages: Annotated[list[Any], add_messages]
 
-    def act_chatbot(state: State) -> dict[str, list[Any]]:
+    def act_system(state: State) -> dict[str, list[Any]]:
+        messages: list[Any] = []
+
+        system_message = SystemMessage(content="英語で回答してください。")
+
+        user_message = HumanMessage(content=state["query"])
+
+        messages.append(system_message)
+        messages.append(user_message)
+
         return {
-            "messages": [llm.invoke(state["messages"])],
+            "messages": messages,
+        }
+
+    def act_chatbot(state: State) -> dict[str, list[Any]]:
+        messages = []
+        ai_message = llm.invoke(state["messages"])
+        messages.append(ai_message)
+
+        return {
+            "messages": messages,
         }
 
     def act_tools(state: State) -> dict[str, list[Any]]:
@@ -94,12 +117,12 @@ def chatbot_builder(
         messages = []
         for tool_call in last_message.tool_calls:
             tool_output = tools_dict[tool_call["name"]].invoke(tool_call["args"])
-            tool_messages = ToolMessage(
+            tool_message = ToolMessage(
                 content=tool_output,
                 name=tool_call["name"],
                 tool_call_id=tool_call["id"],
             )
-            messages.append(tool_messages)
+            messages.append(tool_message)
 
         return {
             "messages": messages,
@@ -115,10 +138,12 @@ def chatbot_builder(
     # Initialize Graph
     builder = StateGraph(State)
 
+    builder.add_node(node_system, act_system)
     builder.add_node(node_chatbot, act_chatbot)
     builder.add_node(node_tools, act_tools)
 
-    builder.add_edge(node_start, node_chatbot)
+    builder.add_edge(node_start, node_system)
+    builder.add_edge(node_system, node_chatbot)
     builder.add_conditional_edges(
         node_chatbot,
         router,
@@ -129,7 +154,7 @@ def chatbot_builder(
     )
     builder.add_edge(node_tools, node_chatbot)
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
 ###
@@ -138,24 +163,40 @@ def chatbot_builder(
 def main() -> None:
     """Execute main function."""
     from langchain_google_genai import ChatGoogleGenerativeAI
+    from langgraph.checkpoint.memory import InMemorySaver
 
     model = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash",
     )
 
+    checkpointer = InMemorySaver()
+
+    config = RunnableConfig(
+        {
+            "configurable": {
+                "thread_id": "chatbot_example_thread",
+            },
+        },
+    )
+
     graph = chatbot_builder(
         model=model,
         tools=list(tools_dict.values()),
+        checkpointer=checkpointer,
     )
 
     # Execute
     result = graph.invoke(
-        {
-            "messages": ["100掛ける200の計算と1足す2の計算をそれぞれしてください"],
+        input={
+            "query": "100掛ける200の計算と1足す2の計算をそれぞれしてください",
         },
+        config=config,
     )
 
+    print("=== Result ===")
     pprint(result)
+    print("=== Checkpointer ===")
+    print(checkpointer.get(config))
 
 
 if __name__ == "__main__":
