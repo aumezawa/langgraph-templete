@@ -1,6 +1,6 @@
 [project]
 name = "langgraph-templete"
-version = "1.3.1"
+version = "1.3.2"
 description = "A template for langgraph projects"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -32,6 +32,7 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
+    # [Reference](https://ruff.rs/docs/rules/)
     "D203", # incorrect-blank-line-before-class
     "D212", # multi-line-summary-first-line
     "D400", # missing-trailing-period
