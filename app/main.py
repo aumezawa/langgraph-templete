@@ -1,7 +1,7 @@
 """
 main.py
 
-Version : 1.3.2
+Version : 1.4.0
 Author  : aumezawa
 """
 
@@ -41,5 +41,41 @@ def exec_chatbot() -> None:
     print(chatbot.checkpoint(thread_id))
 
 
+def exec_passive_goal_creater() -> None:
+    """Execute Passive Goal Creater."""
+    from app.agents.passive_goal_creater import PassiveGoalCreater
+
+    goal_creater = PassiveGoalCreater()
+
+    # Execute
+    result = goal_creater.run(
+        query="カレーの作り方",
+    )
+
+    print("=== Result ===")
+    print(result)
+
+
+def main() -> None:
+    """Execute a selected function."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Select to execute an agent.")
+    parser.add_argument(
+        "-a",
+        "--agent",
+        choices=["chatbot", "passive_goal_creater"],
+        help="The agent to execute.",
+    )
+    args = parser.parse_args()
+
+    if args.agent == "chatbot":
+        exec_chatbot()
+    elif args.agent == "passive_goal_creater":
+        exec_passive_goal_creater()
+    else:
+        print(parser.format_help())
+
+
 if __name__ == "__main__":
-    exec_chatbot()
+    main()
