@@ -1,7 +1,7 @@
 """
 main.py
 
-Version : 1.4.0
+Version : 1.5.0
 Author  : aumezawa
 """
 
@@ -56,6 +56,14 @@ def exec_passive_goal_creater() -> None:
     print(result)
 
 
+def exec_a2a_chatbot() -> None:
+    """Execute A2A Chatbot."""
+    from app.a2a_agents.a2a_chatbot import A2aChatbot
+
+    a2a_chatbot = A2aChatbot()
+    a2a_chatbot.run()
+
+
 def main() -> None:
     """Execute a selected function."""
     import argparse
@@ -64,7 +72,7 @@ def main() -> None:
     parser.add_argument(
         "-a",
         "--agent",
-        choices=["chatbot", "passive_goal_creater"],
+        choices=["chatbot", "passive_goal_creater", "a2a_chatbot"],
         help="The agent to execute.",
     )
     args = parser.parse_args()
@@ -73,6 +81,8 @@ def main() -> None:
         exec_chatbot()
     elif args.agent == "passive_goal_creater":
         exec_passive_goal_creater()
+    elif args.agent == "a2a_chatbot":
+        exec_a2a_chatbot()
     else:
         print(parser.format_help())
 

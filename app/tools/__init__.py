@@ -1,1 +1,1 @@
-"""Package for the chatbot.py module."""
+"""Package for the tools module."""
