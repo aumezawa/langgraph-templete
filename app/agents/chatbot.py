@@ -1,10 +1,11 @@
 """
 chatbot.py
 
-Version : 1.3.2
+Version : 1.5.2
 Author  : aumezawa
 """
 
+import functools
 from typing import Any, Annotated, TypedDict
 from langgraph.graph.message import add_messages
 
@@ -27,6 +28,7 @@ class Chatbot:
 
     from langgraph.graph import START, END
     from langchain_core.language_models import BaseChatModel
+    from langchain_core.runnables import Runnable
     from langchain_core.tools import BaseTool
     from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint
     from langgraph.graph.state import CompiledStateGraph
@@ -56,7 +58,6 @@ class Chatbot:
             self.llm = self.model
         self.tools = tools or []
         self.checkpointer = checkpointer or InMemorySaver()
-        self.graph = self._build_graph()
 
     def checkpoint(self, thread_id: str) -> Checkpoint | None:
         """Get Checkpointer."""
@@ -84,9 +85,9 @@ class Chatbot:
             "messages": messages,
         }
 
-    def _node_chatbot(self, state: ChatbotState) -> dict[str, list[Any]]:
+    def _node_chatbot(self, state: ChatbotState, llm: Runnable[Any, Any]) -> dict[str, list[Any]]:
         messages = [
-            self.llm.invoke(state["messages"]),
+            llm.invoke(state["messages"]),
         ]
 
         return {
@@ -120,7 +121,7 @@ class Chatbot:
                     return self.NODE_TOOLS
         return self.NODE_END
 
-    def _build_graph(self) -> CompiledStateGraph[Any, None, Any, Any]:
+    def _build_graph(self, llm: Runnable[Any, Any] | None = None) -> CompiledStateGraph[Any, None, Any, Any]:
         """Build Chatbot Graph."""
         from langgraph.graph import StateGraph
 
@@ -128,7 +129,7 @@ class Chatbot:
         builder = StateGraph(ChatbotState)
 
         builder.add_node(self.NODE_SETUP, self._node_setup)
-        builder.add_node(self.NODE_CHATBOT, self._node_chatbot)
+        builder.add_node(self.NODE_CHATBOT, functools.partial(self._node_chatbot, llm=(llm or self.llm)))
         builder.add_node(self.NODE_TOOLS, self._node_tools)
 
         builder.add_edge(self.NODE_START, self.NODE_SETUP)
@@ -145,10 +146,20 @@ class Chatbot:
 
         return builder.compile(checkpointer=self.checkpointer)
 
-    def run(self, query: str, thread_id: str | None = None) -> dict[str, Any]:
+    def run(
+        self,
+        query: str,
+        thread_id: str | None = None,
+        llm: Runnable[Any, Any] | None = None,
+    ) -> dict[str, Any]:
         """Run Chatbot."""
         from uuid import uuid4
         from langchain_core.runnables import RunnableConfig
+
+        if llm:
+            self.graph = self._build_graph(llm)
+        elif not hasattr(self, "graph"):
+            self.graph = self._build_graph(self.llm)
 
         result = self.graph.invoke(
             input={
