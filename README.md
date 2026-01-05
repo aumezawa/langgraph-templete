@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- python 3.11 or later
+- python 3.14 or later
 - uv
 
 ## Setup
@@ -17,7 +17,7 @@ uv sync
 ## Run
 
 ```shell
-uv run python ./app/chatbot.py
+uv run python ./app/main.py -a <agent>
 ```
 
 ## Debug
@@ -39,5 +39,5 @@ uv run ruff format
 ### Type Checking
 
 ```shell
-uv run mypy <file.py>
+uv run mypy .
 ```
