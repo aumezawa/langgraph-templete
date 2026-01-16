@@ -14,7 +14,6 @@ HTTP_PROTOCOL: Literal["http", "https"] = "http"
 HTTP_HOST: str = "localhost"
 HTTP_PORT: int = 8000
 HTTP_ROUTE: str = "/a2a/chatbot"
-HTTP_API_VERSION: str = "/v1"
 
 
 class A2aChatbotExecutor(AgentExecutor):
@@ -40,10 +39,12 @@ class A2aChatbotExecutor(AgentExecutor):
         """Execute Agent."""
         from a2a.utils import new_agent_text_message
 
-        result = self.agent.run(
+        result = await self.agent.async_run(
             query=context.get_user_input(),
-        )["messages"][-1].content
-        await event_queue.enqueue_event(new_agent_text_message(result))
+            thread_id=context.context_id,
+        )
+        message = result["messages"][-1].content
+        await event_queue.enqueue_event(new_agent_text_message(message))
 
     @override
     async def cancel(
@@ -76,13 +77,13 @@ class A2aChatbot:
             examples=["100掛ける200を計算してください", "1足す2を計算してください"],
         )
         self.agent_card = AgentCard(
-            name="Calculating Chatbot",
+            name="Calculating_Chatbot",
             description="A chatbot that can answer questions and perform calculations.",
-            url=f"{HTTP_PROTOCOL}://{HTTP_HOST}:{HTTP_PORT}{HTTP_ROUTE}{HTTP_API_VERSION}",
+            url=f"{HTTP_PROTOCOL}://{HTTP_HOST}:{HTTP_PORT}{HTTP_ROUTE}",
             preferred_transport=self.mode,
             additional_interfaces=[
                 AgentInterface(
-                    url=f"{HTTP_PROTOCOL}://{HTTP_HOST}:{HTTP_PORT}{HTTP_ROUTE}{HTTP_API_VERSION}",
+                    url=f"{HTTP_PROTOCOL}://{HTTP_HOST}:{HTTP_PORT}{HTTP_ROUTE}",
                     transport=self.mode,
                 ),
             ],

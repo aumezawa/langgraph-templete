@@ -12,7 +12,7 @@ from langchain_core.tools import tool, BaseTool
 # Define Tools
 ###
 @tool
-def multiply_function(x: int, y: int) -> int:
+async def multiply_function(x: int, y: int) -> int:
     """
     2つのint型の値を引数で受け取り、掛け算の結果をint型で返す
 
@@ -27,7 +27,7 @@ def multiply_function(x: int, y: int) -> int:
 
 
 @tool
-def add_function(x: int, y: int) -> int:
+async def add_function(x: int, y: int) -> int:
     """
     2つのint型の値を引数で受け取り、足し算の結果をint型で返す
 

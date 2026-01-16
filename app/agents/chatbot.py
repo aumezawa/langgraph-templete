@@ -6,6 +6,7 @@ Author  : aumezawa
 """
 
 import functools
+from collections.abc import AsyncIterator
 from typing import Any, Annotated, TypedDict
 from langgraph.graph.message import add_messages
 
@@ -46,6 +47,7 @@ class Chatbot:
         model: BaseChatModel | None = None,
         tools: list[BaseTool] | None = None,
         checkpointer: BaseCheckpointSaver[str] | None = None,
+        system_prompt: str = "Answer in Japanese.",
     ) -> None:
         """Initialize Chatbot."""
         from langgraph.checkpoint.memory import InMemorySaver
@@ -58,6 +60,7 @@ class Chatbot:
             self.llm = self.model
         self.tools = tools or []
         self.checkpointer = checkpointer or InMemorySaver()
+        self.system_prompt = system_prompt
 
     def checkpoint(self, thread_id: str) -> Checkpoint | None:
         """Get Checkpointer."""
@@ -73,11 +76,11 @@ class Chatbot:
             ),
         )
 
-    def _node_setup(self, state: ChatbotState) -> dict[str, list[Any]]:
+    async def _node_setup(self, state: ChatbotState) -> dict[str, list[Any]]:
         from langchain_core.messages import SystemMessage, HumanMessage
 
         messages = [
-            SystemMessage(content="英語で回答してください。"),
+            SystemMessage(content=self.system_prompt),
             HumanMessage(content=state["query"]),
         ]
 
@@ -85,7 +88,7 @@ class Chatbot:
             "messages": messages,
         }
 
-    def _node_chatbot(self, state: ChatbotState, llm: Runnable[Any, Any]) -> dict[str, list[Any]]:
+    async def _node_chatbot(self, state: ChatbotState, llm: Runnable[Any, Any]) -> dict[str, list[Any]]:
         messages = [
             llm.invoke(state["messages"]),
         ]
@@ -94,7 +97,7 @@ class Chatbot:
             "messages": messages,
         }
 
-    def _node_tools(self, state: ChatbotState) -> dict[str, list[Any]]:
+    async def _node_tools(self, state: ChatbotState) -> dict[str, list[Any]]:
         from langchain_core.messages import ToolMessage
 
         last_message = state["messages"][-1]
@@ -102,7 +105,7 @@ class Chatbot:
         for tool_call in last_message.tool_calls:
             for tool in self.tools:
                 if tool_call["name"] == tool.name:
-                    tool_output = tool.invoke(tool_call["args"])
+                    tool_output = await tool.ainvoke(tool_call["args"])
                     tool_message = ToolMessage(
                         content=tool_output,
                         name=tool_call["name"],
@@ -113,7 +116,7 @@ class Chatbot:
             "messages": messages,
         }
 
-    def _node_router(self, state: ChatbotState) -> str:
+    async def _node_router(self, state: ChatbotState) -> str:
         last_message = state["messages"][-1]
         if last_message.tool_calls:
             for tool_call in last_message.tool_calls:
@@ -146,7 +149,7 @@ class Chatbot:
 
         return builder.compile(checkpointer=self.checkpointer)
 
-    def run(
+    async def async_run(
         self,
         query: str,
         thread_id: str | None = None,
@@ -161,7 +164,7 @@ class Chatbot:
         elif not hasattr(self, "graph"):
             self.graph = self._build_graph(self.llm)
 
-        result = self.graph.invoke(
+        result = await self.graph.ainvoke(
             input={
                 "query": query,
             },
@@ -178,3 +181,31 @@ class Chatbot:
             return {}
 
         return result
+
+    async def astream_run(
+        self,
+        query: str,
+        thread_id: str | None = None,
+        llm: Runnable[Any, Any] | None = None,
+    ) -> AsyncIterator[dict[str, Any] | Any]:
+        """Run Chatbot."""
+        from uuid import uuid4
+        from langchain_core.runnables import RunnableConfig
+
+        if llm:
+            self.graph = self._build_graph(llm)
+        elif not hasattr(self, "graph"):
+            self.graph = self._build_graph(self.llm)
+
+        return self.graph.astream(
+            input={
+                "query": query,
+            },
+            config=RunnableConfig(
+                {
+                    "configurable": {
+                        "thread_id": thread_id or uuid4().hex,
+                    },
+                },
+            ),
+        )
