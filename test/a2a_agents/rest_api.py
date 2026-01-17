@@ -1,13 +1,15 @@
 """
 rest_api.py
 
-Version : 1.5.0
+Version : 1.8.0
 Author  : aumezawa
 """
 
 import httpx
+import time
 from typing import Any
 from uuid import uuid4
+
 
 def get_agnet_card(
     url: str,
@@ -40,11 +42,31 @@ def make_message(
     }
 
 
+def get_task(
+    url: str,
+    task_id: str,
+    api_version: str = "/v1",
+) -> bool:
+    """Get Task."""
+    with httpx.Client(timeout=60.0) as client:
+        response = client.get(
+            url=f"{url}{api_version}/tasks/{task_id}",
+        )
+        result = response.json()
+        print(f"=== Get Task (task_id={task_id}) ===")
+        print(result)
+        print()
+        if result.get("status") and result["status"]["state"] in ["TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"]:
+            return True
+    return False
+
+
 def post_message(
     url: str,
     query: str,
     context_id: str | None = None,
     api_version: str = "/v1",
+    retry_out: int = 60,
 ) -> None:
     """Post Message."""
     with httpx.Client(timeout=60.0) as client:
@@ -55,9 +77,15 @@ def post_message(
             },
             json=make_message(query, context_id),
         )
+        result = response.json()
         print(f"=== Send Message (query={query}, context_id={context_id}) ===")
-        print(response.json())
+        print(result)
         print()
+        if result.get("task"):
+            for _ in range(retry_out):
+                if not get_task(url=url, task_id=result["task"]["id"]):
+                    break
+                time.sleep(1)
 
 
 if __name__ == "__main__":

@@ -77,10 +77,8 @@ class A2aServer:
                     "text",
                     "text/plain",
                 ],
-                push_notification_configs=[
-                ],
-                extensions=[
-                ],
+                push_notification_configs=[],
+                extensions=[],
             ),
         )
 
@@ -113,7 +111,7 @@ class A2aServer:
                     return {
                         "message_id": message_id,
                         "context_id": context_id,
-                        "content":[],
+                        "content": [],
                         "isError": True,
                     }
             return {

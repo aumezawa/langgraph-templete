@@ -1,7 +1,7 @@
 """
 a2a_chatbot.py
 
-Version : 1.5.0
+Version : 1.8.0
 Author  : aumezawa
 """
 
@@ -21,6 +21,8 @@ class A2aChatbotExecutor(AgentExecutor):
 
     def __init__(
         self,
+        *,
+        tasking: bool = False,
     ) -> None:
         """Initialize Chatbot Executor."""
         from app.agents.chatbot import Chatbot
@@ -29,6 +31,7 @@ class A2aChatbotExecutor(AgentExecutor):
         self.agent = Chatbot(
             tools=math_tools,
         )
+        self.tasking = tasking
 
     @override
     async def execute(
@@ -37,14 +40,65 @@ class A2aChatbotExecutor(AgentExecutor):
         event_queue: EventQueue,
     ) -> None:
         """Execute Agent."""
-        from a2a.utils import new_agent_text_message
+        from a2a.server.tasks import TaskUpdater
+        from a2a.types import Part, TextPart
+        from a2a.utils import new_agent_text_message, new_task
 
-        result = await self.agent.async_run(
-            query=context.get_user_input(),
-            thread_id=context.context_id,
+        quary = context.get_user_input()
+
+        if not self.tasking:
+            result = await self.agent.async_run(
+                query=quary,
+                thread_id=context.context_id,
+            )
+            message = result["messages"][-1].content
+            await event_queue.enqueue_event(new_agent_text_message(message, context.context_id))
+            return
+
+        task = context.current_task
+        if not task:
+            task = new_task(context.message)  # type: ignore[arg-type]
+            await event_queue.enqueue_event(task)
+        updater = TaskUpdater(event_queue, task.id, task.context_id)
+        await updater.start_work(
+            new_agent_text_message(
+                "It's a work in progress.",
+                task.context_id,
+                task.id,
+            ),
         )
-        message = result["messages"][-1].content
-        await event_queue.enqueue_event(new_agent_text_message(message))
+
+        try:
+            answer = ""
+            async for event in await self.agent.astream_run(
+                query=quary,
+                thread_id=task.context_id,
+            ):
+                if event.get("chatbot") is not None:
+                    for message in event["chatbot"]["messages"]:
+                        answer = answer + message.content
+
+            await updater.add_artifact(
+                parts=[Part(root=TextPart(text=answer))],
+                name="answer",
+            )
+
+            await updater.complete(
+                new_agent_text_message(
+                    "Successfully completed the task you requested.",
+                    task.context_id,
+                    task.id,
+                ),
+            )
+
+        except Exception:  # noqa: BLE001
+            await updater.failed(
+                new_agent_text_message(
+                    "Sorry, the task you requested unfortunately failed.",
+                    task.context_id,
+                    task.id,
+                ),
+            )
 
     @override
     async def cancel(
@@ -61,7 +115,9 @@ class A2aChatbot:
 
     def __init__(
         self,
+        *,
         mode: Literal["JSONRPC", "GRPC", "HTTP+JSON"] = "HTTP+JSON",
+        tasking: bool = False,
     ) -> None:
         """Initialize A2A Chatbot."""
         from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
@@ -98,7 +154,7 @@ class A2aChatbot:
             skills=[self.agent_skill],
             supports_authenticated_extended_card=False,
         )
-        self.agent_executor = A2aChatbotExecutor()
+        self.agent_executor = A2aChatbotExecutor(tasking=tasking)
 
     def run(
         self,

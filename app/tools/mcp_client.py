@@ -42,7 +42,7 @@ class McpClient:
             msg = "transport must be 'sse' or 'streamable_http'."
             raise ValueError(msg)
 
-        connections = {}
+        connections: dict[str, Connection] = {}
         connections[self.name] = connection
         client = MultiServerMCPClient(connections)
 

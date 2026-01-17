@@ -1,7 +1,7 @@
 """
 main.py
 
-Version : 1.5.0
+Version : 1.8.0
 Author  : aumezawa
 """
 
@@ -61,7 +61,7 @@ def exec_a2a_chatbot() -> None:
     """Execute A2A Chatbot."""
     from app.a2a_agents.a2a_chatbot import A2aChatbot
 
-    a2a_chatbot = A2aChatbot()
+    a2a_chatbot = A2aChatbot(tasking=True)
     a2a_chatbot.run()
 
 
