@@ -5,10 +5,30 @@ Version : 1.9.0
 Author  : aumezawa
 """
 
-from typing import override, Literal
-from a2a.server.agent_execution import AgentExecutor, RequestContext
-from a2a.server.events import EventQueue
+from typing import Literal, override
 
+import uvicorn
+from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.apps import A2AFastAPIApplication, A2ARESTFastAPIApplication
+from a2a.server.events import EventQueue
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+    AgentInterface,
+    AgentSkill,
+    Part,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+    TextPart,
+)
+from a2a.utils import new_task, new_text_artifact
+
+from app.agents.chatbot import Chatbot
+from app.tools.math import tools as math_tools
 
 HTTP_PROTOCOL: Literal["http", "https"] = "http"
 HTTP_HOST: str = "localhost"
@@ -26,9 +46,6 @@ class A2aChatbotExecutor(AgentExecutor):
         blocking: bool = True,
     ) -> None:
         """Initialize Chatbot Executor."""
-        from app.agents.chatbot import Chatbot
-        from app.tools.math import tools as math_tools
-
         self.agent = Chatbot(
             tools=math_tools,
         )
@@ -42,10 +59,6 @@ class A2aChatbotExecutor(AgentExecutor):
         event_queue: EventQueue,
     ) -> None:
         """Execute Agent."""
-        from a2a.server.tasks import TaskUpdater
-        from a2a.types import Part, TextPart, TaskState, TaskStatus, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-        from a2a.utils import new_task, new_text_artifact
-
         quary = context.get_user_input()
 
         task = context.current_task
@@ -139,8 +152,6 @@ class A2aChatbot:
         blocking: bool = True,
     ) -> None:
         """Initialize A2A Chatbot."""
-        from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
-
         self.mode = mode
         self.agent_skill = AgentSkill(
             id="calculating",
@@ -181,11 +192,6 @@ class A2aChatbot:
         port: int = HTTP_PORT,
     ) -> None:
         """Start HTTP Server."""
-        import uvicorn
-        from a2a.server.apps import A2AFastAPIApplication, A2ARESTFastAPIApplication
-        from a2a.server.request_handlers import DefaultRequestHandler
-        from a2a.server.tasks import InMemoryTaskStore
-
         server: A2AFastAPIApplication | A2ARESTFastAPIApplication
         if self.mode == "JSONRPC":
             server = A2AFastAPIApplication(

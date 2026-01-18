@@ -5,11 +5,13 @@ Version : 1.9.0
 Author  : aumezawa
 """
 
-import httpx
-import httpx_sse
+import argparse
 import time
 from typing import Any
 from uuid import uuid4
+
+import httpx
+import httpx_sse
 
 
 def get_agnet_card(
@@ -30,7 +32,7 @@ def make_message(
     query: str,
     context_id: str | None = None,
 ) -> dict[str, Any]:
-    """Make Message"""
+    """Make Message."""
     return {
         "message": {
             "messageId": uuid4().hex,
@@ -114,8 +116,6 @@ def post_message_stream(
 
 if __name__ == "__main__":
     """Execute a selected function."""
-    import argparse
-
     parser = argparse.ArgumentParser(description="Select to execute an agent.")
     parser.add_argument(
         "-a",

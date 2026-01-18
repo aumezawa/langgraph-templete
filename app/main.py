@@ -5,13 +5,17 @@ Version : 1.9.0
 Author  : aumezawa
 """
 
-import os
-import sys
-from dotenv import load_dotenv
+import argparse
+import asyncio
 from uuid import uuid4
 
-sys.path.append(os.path.curdir)
+from dotenv import load_dotenv
 
+from app.a2a_agents.a2a_chatbot import A2aChatbot
+from app.agents.chatbot import Chatbot
+from app.agents.passive_goal_creater import PassiveGoalCreater
+from app.tools.a2a_client import A2aServer
+from app.tools.math import tools as math_tools
 
 ###
 # Set API Key
@@ -21,9 +25,6 @@ load_dotenv()
 
 async def exec_chatbot() -> None:
     """Execute chatbot."""
-    from app.agents.chatbot import Chatbot
-    from app.tools.math import tools as math_tools
-
     chatbot = Chatbot(
         tools=math_tools,
     )
@@ -44,8 +45,6 @@ async def exec_chatbot() -> None:
 
 def exec_passive_goal_creater() -> None:
     """Execute Passive Goal Creater."""
-    from app.agents.passive_goal_creater import PassiveGoalCreater
-
     goal_creater = PassiveGoalCreater()
 
     # Execute
@@ -59,17 +58,12 @@ def exec_passive_goal_creater() -> None:
 
 def exec_a2a_chatbot(*, streaming: bool = True, blocking: bool = True) -> None:
     """Execute A2A Chatbot."""
-    from app.a2a_agents.a2a_chatbot import A2aChatbot
-
     a2a_chatbot = A2aChatbot(streaming=streaming, blocking=blocking)
     a2a_chatbot.run()
 
 
 async def exec_orchestrator() -> None:
     """Execute Chatbot."""
-    from app.agents.chatbot import Chatbot
-    from app.tools.a2a_client import A2aServer
-
     a2a_server = A2aServer(
         name="calcurator",
         base_url="http://localhost:8000/a2a/chatbot",
@@ -95,9 +89,6 @@ async def exec_orchestrator() -> None:
 
 def main() -> None:
     """Execute a selected function."""
-    import argparse
-    import asyncio
-
     parser = argparse.ArgumentParser(description="Select to execute an agent.")
     parser.add_argument(
         "-a",

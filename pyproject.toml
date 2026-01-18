@@ -1,6 +1,6 @@
 [project]
 name = "langgraph-templete"
-version = "1.9.0"
+version = "1.9.1"
 description = "A template for langgraph projects"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -43,9 +43,7 @@ ignore = [
     "D400", # missing-trailing-period
     "D413", # missing-blank-line-after-last-section
     "D415", # missing-terminal-punctuation
-    "I001", # unsorted-imports
     "T201", # print
-    "T203", # pprint
     "PLC0415",  # import-outside-top-level
     "PLR091",   # too-many-arguments
 ]
@@ -53,3 +51,7 @@ ignore = [
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+known-third-party = ["a2a"]

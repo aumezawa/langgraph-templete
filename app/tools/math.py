@@ -5,7 +5,7 @@ Version : 1.3.2
 Author  : aumezawa
 """
 
-from langchain_core.tools import tool, BaseTool
+from langchain_core.tools import BaseTool, tool
 
 
 ###
