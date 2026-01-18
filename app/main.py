@@ -1,7 +1,7 @@
 """
 main.py
 
-Version : 1.8.0
+Version : 1.9.0
 Author  : aumezawa
 """
 
@@ -57,11 +57,11 @@ def exec_passive_goal_creater() -> None:
     print(result)
 
 
-def exec_a2a_chatbot() -> None:
+def exec_a2a_chatbot(*, streaming: bool = True, blocking: bool = True) -> None:
     """Execute A2A Chatbot."""
     from app.a2a_agents.a2a_chatbot import A2aChatbot
 
-    a2a_chatbot = A2aChatbot(tasking=True)
+    a2a_chatbot = A2aChatbot(streaming=streaming, blocking=blocking)
     a2a_chatbot.run()
 
 
@@ -105,6 +105,12 @@ def main() -> None:
         choices=["chatbot", "passive_goal_creater", "a2a_chatbot", "orchestrator"],
         help="The agent to execute.",
     )
+    parser.add_argument(
+        "-m",
+        "--a2a-mode",
+        choices=["direct", "basic", "streaming"],
+        help="A2A mode.",
+    )
     args = parser.parse_args()
 
     if args.agent == "chatbot":
@@ -112,7 +118,12 @@ def main() -> None:
     elif args.agent == "passive_goal_creater":
         exec_passive_goal_creater()
     elif args.agent == "a2a_chatbot":
-        exec_a2a_chatbot()
+        if args.a2a_mode == "direct":
+            exec_a2a_chatbot(streaming=False, blocking=True)
+        elif args.a2a_mode == "basic":
+            exec_a2a_chatbot(streaming=False, blocking=False)
+        elif args.a2a_mode == "streaming":
+            exec_a2a_chatbot(streaming=True)
     elif args.agent == "orchestrator":
         asyncio.run(exec_orchestrator())
     else:

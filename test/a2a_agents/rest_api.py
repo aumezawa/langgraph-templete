@@ -1,11 +1,12 @@
 """
 rest_api.py
 
-Version : 1.8.0
+Version : 1.9.0
 Author  : aumezawa
 """
 
 import httpx
+import httpx_sse
 import time
 from typing import Any
 from uuid import uuid4
@@ -14,13 +15,15 @@ from uuid import uuid4
 def get_agnet_card(
     url: str,
     route: str = "/.well-known/agent-card.json",
-) -> None:
+) -> tuple[str, bool]:
     """Get Agent Card."""
     with httpx.Client(timeout=60.0) as client:
         response = client.get(f"{url}{route}")
+        result = response.json()
         print("=== Get Agent Card ===")
-        print(response.json())
+        print(result)
         print()
+        return (result["url"], result["capabilities"]["streaming"])
 
 
 def make_message(
@@ -81,11 +84,32 @@ def post_message(
         print(f"=== Send Message (query={query}, context_id={context_id}) ===")
         print(result)
         print()
-        if result.get("task"):
+        if result.get("task") and result["task"]["status"]["state"] in ["TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"]:
             for _ in range(retry_out):
                 if not get_task(url=url, task_id=result["task"]["id"]):
                     break
                 time.sleep(1)
+
+
+def post_message_stream(
+    url: str,
+    query: str,
+    context_id: str | None = None,
+    api_version: str = "/v1",
+) -> None:
+    """Post Message with SSE."""
+    with httpx_sse.connect_sse(
+        client=httpx.Client(),
+        method="POST",
+        url=f"{url}{api_version}/message:stream",
+        headers={
+            "Content-Type": "application/json",
+        },
+        json=make_message(query, context_id),
+    ) as event_source:
+        for sse in event_source.iter_sse():
+            print(sse.json())
+            print()
 
 
 if __name__ == "__main__":
@@ -115,7 +139,10 @@ if __name__ == "__main__":
 
     if args.agent == "a2a_chatbot":
         url = "http://localhost:8000/a2a/chatbot"
-        get_agnet_card(url)
-        post_message(url, query=args.query, context_id=args.context_id)
+        (url, streaming) = get_agnet_card(url)
+        if streaming:
+            post_message_stream(url=url, query=args.query, context_id=args.context_id)
+        else:
+            post_message(url=url, query=args.query, context_id=args.context_id)
     else:
         print(parser.format_help())

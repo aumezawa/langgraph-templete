@@ -1,6 +1,6 @@
 [project]
 name = "langgraph-templete"
-version = "1.8.0"
+version = "1.9.0"
 description = "A template for langgraph projects"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -37,6 +37,7 @@ target-version = "py312"
 select = ["ALL"]
 ignore = [
     # [Reference](https://ruff.rs/docs/rules/)
+    "C901", # complex-structure
     "D203", # incorrect-blank-line-before-class
     "D212", # multi-line-summary-first-line
     "D400", # missing-trailing-period
@@ -45,7 +46,8 @@ ignore = [
     "I001", # unsorted-imports
     "T201", # print
     "T203", # pprint
-    "PLC0415", # import-outside-top-level
+    "PLC0415",  # import-outside-top-level
+    "PLR091",   # too-many-arguments
 ]
 
 [tool.ruff.format]

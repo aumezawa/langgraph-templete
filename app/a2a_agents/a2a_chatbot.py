@@ -1,7 +1,7 @@
 """
 a2a_chatbot.py
 
-Version : 1.8.0
+Version : 1.9.0
 Author  : aumezawa
 """
 
@@ -22,7 +22,8 @@ class A2aChatbotExecutor(AgentExecutor):
     def __init__(
         self,
         *,
-        tasking: bool = False,
+        streaming: bool = False,
+        blocking: bool = True,
     ) -> None:
         """Initialize Chatbot Executor."""
         from app.agents.chatbot import Chatbot
@@ -31,7 +32,8 @@ class A2aChatbotExecutor(AgentExecutor):
         self.agent = Chatbot(
             tools=math_tools,
         )
-        self.tasking = tasking
+        self.streaming = streaming
+        self.blocking = blocking
 
     @override
     async def execute(
@@ -41,64 +43,80 @@ class A2aChatbotExecutor(AgentExecutor):
     ) -> None:
         """Execute Agent."""
         from a2a.server.tasks import TaskUpdater
-        from a2a.types import Part, TextPart
-        from a2a.utils import new_agent_text_message, new_task
+        from a2a.types import Part, TextPart, TaskState, TaskStatus, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+        from a2a.utils import new_task, new_text_artifact
 
         quary = context.get_user_input()
-
-        if not self.tasking:
-            result = await self.agent.async_run(
-                query=quary,
-                thread_id=context.context_id,
-            )
-            message = result["messages"][-1].content
-            await event_queue.enqueue_event(new_agent_text_message(message, context.context_id))
-            return
 
         task = context.current_task
         if not task:
             task = new_task(context.message)  # type: ignore[arg-type]
-            await event_queue.enqueue_event(task)
-        updater = TaskUpdater(event_queue, task.id, task.context_id)
-        await updater.start_work(
-            new_agent_text_message(
-                "It's a work in progress.",
-                task.context_id,
-                task.id,
-            ),
-        )
 
         try:
-            answer = ""
-            async for event in await self.agent.astream_run(
-                query=quary,
-                thread_id=task.context_id,
-            ):
-                if event.get("chatbot") is not None:
-                    for message in event["chatbot"]["messages"]:
-                        answer = answer + message.content
+            # Direct Response
+            if (not self.streaming) and (not self.blocking):
+                result = await self.agent.async_run(
+                    query=quary,
+                    thread_id=context.context_id,
+                )
+                answer = result["messages"][-1].content
+                task.artifacts = [new_text_artifact(name="answer", text=answer)]
+                task.status.state = TaskState.completed
+                await event_queue.enqueue_event(task)
 
-            await updater.add_artifact(
-                parts=[Part(root=TextPart(text=answer))],
-                name="answer",
-            )
+            # Streaming Task Execution
+            elif self.streaming:
+                task.status.state = TaskState.working
+                await event_queue.enqueue_event(task)
+                async for event in await self.agent.astream_run(
+                    query=quary,
+                    thread_id=context.context_id,
+                ):
+                    if event.get("chatbot") is not None:
+                        await event_queue.enqueue_event(
+                            TaskArtifactUpdateEvent(
+                                artifact=new_text_artifact(
+                                    name="answer",
+                                    text=event["chatbot"]["messages"][-1].content,
+                                ),
+                                context_id=task.context_id,
+                                task_id=task.id,
+                            ),
+                        )
+                await event_queue.enqueue_event(
+                    TaskStatusUpdateEvent(
+                        status=TaskStatus(state=TaskState.completed),
+                        context_id=task.context_id,
+                        task_id=task.id,
+                        final=True,
+                    ),
+                )
 
-            await updater.complete(
-                new_agent_text_message(
-                    "Successfully completed the task you requested.",
-                    task.context_id,
-                    task.id,
-                ),
-            )
+            # Basic Task Execution
+            else:
+                await event_queue.enqueue_event(task)
+                updater = TaskUpdater(event_queue, task.id, task.context_id)
+                await updater.start_work()
 
-        except Exception:  # noqa: BLE001
-            await updater.failed(
-                new_agent_text_message(
-                    "Sorry, the task you requested unfortunately failed.",
-                    task.context_id,
-                    task.id,
-                ),
-            )
+                result = await self.agent.async_run(
+                    query=quary,
+                    thread_id=context.context_id,
+                )
+                answer = result["messages"][-1].content
+
+                await updater.add_artifact(
+                    parts=[Part(root=TextPart(text=answer))],
+                    name="answer",
+                )
+
+                await updater.complete()
+
+        except Exception as e:  # noqa: BLE001
+            task.status.state = TaskState.failed
+            task.artifacts = []
+            task.metadata = task.metadata = {}
+            task.metadata["error"] = str(e)
+            await event_queue.enqueue_event(task)
 
     @override
     async def cancel(
@@ -117,7 +135,8 @@ class A2aChatbot:
         self,
         *,
         mode: Literal["JSONRPC", "GRPC", "HTTP+JSON"] = "HTTP+JSON",
-        tasking: bool = False,
+        streaming: bool = False,
+        blocking: bool = True,
     ) -> None:
         """Initialize A2A Chatbot."""
         from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
@@ -143,18 +162,18 @@ class A2aChatbot:
                     transport=self.mode,
                 ),
             ],
-            version="1.5.0",
+            version="1.9.0",
             capabilities=AgentCapabilities(
                 push_notifications=False,
                 state_transition_history=False,
-                streaming=False,
+                streaming=streaming,
             ),
             default_input_modes=["text", "text/plain"],
             default_output_modes=["text", "text/plain"],
             skills=[self.agent_skill],
             supports_authenticated_extended_card=False,
         )
-        self.agent_executor = A2aChatbotExecutor(tasking=tasking)
+        self.agent_executor = A2aChatbotExecutor(streaming=streaming, blocking=blocking)
 
     def run(
         self,

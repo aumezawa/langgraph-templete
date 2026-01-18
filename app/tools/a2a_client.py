@@ -1,7 +1,7 @@
 """
-mcp.py
+a2a_client.py
 
-Version : 1.7.0
+Version : 1.9.0
 Author  : aumezawa
 """
 
@@ -11,8 +11,10 @@ from pydantic import BaseModel, Field
 from uuid import uuid4
 from a2a.client import ClientConfig, ClientFactory
 from a2a.client.card_resolver import A2ACardResolver
-from a2a.types import AgentCard, Message, Part, Role, TransportProtocol, TextPart
+from a2a.types import AgentCard, Message, Part, Role, TransportProtocol, TaskState, TaskQueryParams, TextPart
 from langchain_core.tools import BaseTool, StructuredTool
+
+TASK_RETRY_OUT = 60
 
 
 class RequestMessage(BaseModel):
@@ -43,8 +45,10 @@ class A2aServer:
         self,
         name: str,
         base_url: str,
+        *,
         agent_card_path: str = "/.well-known/agent-card.json",
         transports: list[TransportProtocol | str] | None = None,
+        streaming: bool = False,
         api_token: str | None = None,
     ) -> None:
         """Initialize A2A Server."""
@@ -52,6 +56,7 @@ class A2aServer:
         self.base_url = base_url
         self.agent_card_path = agent_card_path
         self.transports = transports or ["JSON-RPC", "HTTP+JSON"]
+        self.streaming = streaming
         self.api_token = api_token
 
     async def get_agent_card(self) -> AgentCard:
@@ -97,23 +102,51 @@ class A2aServer:
                     Part(root=TextPart(text=text)),
                 ],
             )
+            task_id: str | None = None
             result = ""
+            # Get result of message:send
             async for response in client.send_message(message):
                 if isinstance(response, Message):
                     for part in response.parts:
                         if part.root.kind == "text" and isinstance(part.root.text, str):
                             result = result + part.root.text
                     context_id = response.context_id or context_id
-                elif isinstance(response, tuple):
-                    ### wip: (task, event) _ response
-                    pass
                 else:
-                    return {
-                        "message_id": message_id,
-                        "context_id": context_id,
-                        "content": [],
-                        "isError": True,
-                    }
+                    (task, _) = response
+                    if task.status.state in {TaskState.submitted, TaskState.working}:
+                        task_id = task.id
+                    elif task.status.state == TaskState.completed and task.artifacts is not None:
+                        for artifact in task.artifacts:
+                            for part in artifact.parts:
+                                if part.root.kind == "text" and isinstance(part.root.text, str):
+                                    result = result + part.root.text
+                    else:
+                        return {
+                            "message_id": message_id,
+                            "context_id": context_id,
+                            "content": [],
+                            "isError": True,
+                        }
+            # Get result of task
+            if task_id is not None:
+                for _ in range(TASK_RETRY_OUT):
+                    task = await client.get_task(TaskQueryParams(id=task_id))
+                    if task.status.state in {TaskState.submitted, TaskState.working}:
+                        continue
+                    if task.status.state == TaskState.completed and task.artifacts is not None:
+                        for artifact in task.artifacts:
+                            for part in artifact.parts:
+                                if part.root.kind == "text" and isinstance(part.root.text, str):
+                                    result = result + part.root.text
+                                    break
+                    else:
+                        return {
+                            "message_id": message_id,
+                            "context_id": context_id,
+                            "content": [],
+                            "isError": True,
+                        }
+            # Finally result
             return {
                 "message_id": message_id,
                 "context_id": context_id,
