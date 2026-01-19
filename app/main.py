@@ -30,7 +30,8 @@ async def exec_chatbot() -> None:
     )
 
     # Execute
-    thread_id = uuid4().hex
+    thread_id = str(uuid4())
+    print(f"thread id: {thread_id}")
     result = await chatbot.async_run(
         query="100掛ける200の計算と1足す2の計算をそれぞれしてください",
         thread_id=thread_id,
@@ -77,7 +78,7 @@ async def exec_orchestrator() -> None:
     )
 
     # Execute
-    thread_id = uuid4().hex
+    thread_id = str(uuid4())
     async for event in await chatbot.astream_run(
         query="100掛ける200の計算と1足す2の計算をそれぞれしてください",
         thread_id=thread_id,

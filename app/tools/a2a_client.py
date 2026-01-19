@@ -96,8 +96,8 @@ class A2aServer:
             context_id: str | None = None,
         ) -> dict[str, Any]:
             message = Message(
-                message_id=message_id or uuid4().hex,
-                context_id=context_id or uuid4().hex,
+                message_id=message_id or str(uuid4()),
+                context_id=context_id or str(uuid4()),
                 role=Role.user,
                 parts=[
                     Part(root=TextPart(text=text)),

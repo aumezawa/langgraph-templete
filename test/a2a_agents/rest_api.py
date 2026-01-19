@@ -35,8 +35,8 @@ def make_message(
     """Make Message."""
     return {
         "message": {
-            "messageId": uuid4().hex,
-            "contextId": context_id or uuid4().hex,
+            "messageId": str(uuid4()),
+            "contextId": context_id or str(uuid4()),
             "role": "ROLE_USER",
             "content": [
                 {

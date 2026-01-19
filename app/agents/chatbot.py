@@ -9,6 +9,7 @@ import functools
 from collections.abc import AsyncIterator
 from typing import Annotated, Any, TypedDict
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph.message import add_messages
 
 
@@ -98,7 +99,7 @@ class Chatbot:
             "messages": messages,
         }
 
-    async def _node_tools(self, state: ChatbotState) -> dict[str, list[Any]]:
+    async def _node_tools(self, state: ChatbotState, config: RunnableConfig) -> dict[str, list[Any]]:
         from langchain_core.messages import ToolMessage
 
         last_message = state["messages"][-1]
@@ -106,7 +107,7 @@ class Chatbot:
         for tool_call in last_message.tool_calls:
             for tool in self.tools:
                 if tool_call["name"] == tool.name:
-                    tool_output = await tool.ainvoke(tool_call["args"])
+                    tool_output = await tool.ainvoke(tool_call["args"], config=config)
                     tool_message = ToolMessage(
                         content=tool_output,
                         name=tool_call["name"],
@@ -173,7 +174,7 @@ class Chatbot:
             config=RunnableConfig(
                 {
                     "configurable": {
-                        "thread_id": thread_id or uuid4().hex,
+                        "thread_id": thread_id or str(uuid4()),
                     },
                 },
             ),
@@ -207,7 +208,7 @@ class Chatbot:
             config=RunnableConfig(
                 {
                     "configurable": {
-                        "thread_id": thread_id or uuid4().hex,
+                        "thread_id": thread_id or str(uuid4()),
                     },
                 },
             ),
