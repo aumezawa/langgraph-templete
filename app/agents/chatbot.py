@@ -1,7 +1,7 @@
 """
 chatbot.py
 
-Version : 1.5.2
+Version : 1.9.3
 Author  : aumezawa
 """
 
@@ -9,8 +9,8 @@ import functools
 from collections.abc import AsyncIterator
 from typing import Annotated, Any, TypedDict
 
-from langchain_core.runnables import RunnableConfig
 from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 
 
 ###
@@ -99,25 +99,6 @@ class Chatbot:
             "messages": messages,
         }
 
-    async def _node_tools(self, state: ChatbotState, config: RunnableConfig) -> dict[str, list[Any]]:
-        from langchain_core.messages import ToolMessage
-
-        last_message = state["messages"][-1]
-        messages = []
-        for tool_call in last_message.tool_calls:
-            for tool in self.tools:
-                if tool_call["name"] == tool.name:
-                    tool_output = await tool.ainvoke(tool_call["args"], config=config)
-                    tool_message = ToolMessage(
-                        content=tool_output,
-                        name=tool_call["name"],
-                        tool_call_id=tool_call["id"],
-                    )
-                    messages.append(tool_message)
-        return {
-            "messages": messages,
-        }
-
     async def _node_router(self, state: ChatbotState) -> str:
         last_message = state["messages"][-1]
         if last_message.tool_calls:
@@ -135,18 +116,11 @@ class Chatbot:
 
         builder.add_node(self.NODE_SETUP, self._node_setup)
         builder.add_node(self.NODE_CHATBOT, functools.partial(self._node_chatbot, llm=(llm or self.llm)))
-        builder.add_node(self.NODE_TOOLS, self._node_tools)
+        builder.add_node(self.NODE_TOOLS, ToolNode(self.tools))
 
         builder.add_edge(self.NODE_START, self.NODE_SETUP)
         builder.add_edge(self.NODE_SETUP, self.NODE_CHATBOT)
-        builder.add_conditional_edges(
-            self.NODE_CHATBOT,
-            self._node_router,
-            {
-                self.NODE_TOOLS: self.NODE_TOOLS,
-                self.NODE_END: self.NODE_END,
-            },
-        )
+        builder.add_conditional_edges(self.NODE_CHATBOT, self._node_router)
         builder.add_edge(self.NODE_TOOLS, self.NODE_CHATBOT)
 
         return builder.compile(checkpointer=self.checkpointer)
@@ -187,14 +161,17 @@ class Chatbot:
 
     async def astream_run(
         self,
+        *,
         query: str,
         thread_id: str | None = None,
+        resume: bool = False,
         llm: Runnable[Any, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any] | Any]:
         """Run Chatbot."""
         from uuid import uuid4
 
         from langchain_core.runnables import RunnableConfig
+        from langgraph.types import Command
 
         if llm:
             self.graph = self._build_graph(llm)
@@ -202,9 +179,7 @@ class Chatbot:
             self.graph = self._build_graph(self.llm)
 
         return self.graph.astream(
-            input={
-                "query": query,
-            },
+            input={"query": query} if not resume else Command(resume=query),
             config=RunnableConfig(
                 {
                     "configurable": {
