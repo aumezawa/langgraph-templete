@@ -1,16 +1,27 @@
 """
 chatbot.py
 
-Version : 1.9.3
+Version : 1.9.4
 Author  : aumezawa
 """
 
 import functools
 from collections.abc import AsyncIterator
 from typing import Annotated, Any, TypedDict
+from uuid import uuid4
 
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_core.tools import BaseTool
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.types import Command
 
 
 ###
@@ -29,13 +40,6 @@ class ChatbotState(TypedDict):
 class Chatbot:
     """Chatbot Class."""
 
-    from langchain_core.language_models import BaseChatModel
-    from langchain_core.runnables import Runnable
-    from langchain_core.tools import BaseTool
-    from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint
-    from langgraph.graph import END, START
-    from langgraph.graph.state import CompiledStateGraph
-
     DEFAULT_LLM_MODEL = "gemini-2.5-flash"
 
     NODE_START = START
@@ -52,9 +56,6 @@ class Chatbot:
         system_prompt: str = "Answer in Japanese.",
     ) -> None:
         """Initialize Chatbot."""
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        from langgraph.checkpoint.memory import InMemorySaver
-
         self.model = model or ChatGoogleGenerativeAI(model=self.DEFAULT_LLM_MODEL)
         if tools:
             self.llm = self.model.bind_tools(tools)
@@ -66,8 +67,6 @@ class Chatbot:
 
     def checkpoint(self, thread_id: str) -> Checkpoint | None:
         """Get Checkpointer."""
-        from langchain_core.runnables import RunnableConfig
-
         return self.checkpointer.get(
             RunnableConfig(
                 {
@@ -79,8 +78,6 @@ class Chatbot:
         )
 
     async def _node_setup(self, state: ChatbotState) -> dict[str, list[Any]]:
-        from langchain_core.messages import HumanMessage, SystemMessage
-
         messages = [
             SystemMessage(content=self.system_prompt),
             HumanMessage(content=state["query"]),
@@ -109,8 +106,6 @@ class Chatbot:
 
     def _build_graph(self, llm: Runnable[Any, Any] | None = None) -> CompiledStateGraph[Any, None, Any, Any]:
         """Build Chatbot Graph."""
-        from langgraph.graph import StateGraph
-
         # Initialize Graph
         builder = StateGraph(ChatbotState)
 
@@ -132,10 +127,6 @@ class Chatbot:
         llm: Runnable[Any, Any] | None = None,
     ) -> dict[str, Any]:
         """Run Chatbot."""
-        from uuid import uuid4
-
-        from langchain_core.runnables import RunnableConfig
-
         if llm:
             self.graph = self._build_graph(llm)
         elif not hasattr(self, "graph"):
@@ -168,11 +159,6 @@ class Chatbot:
         llm: Runnable[Any, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any] | Any]:
         """Run Chatbot."""
-        from uuid import uuid4
-
-        from langchain_core.runnables import RunnableConfig
-        from langgraph.types import Command
-
         if llm:
             self.graph = self._build_graph(llm)
         elif not hasattr(self, "graph"):

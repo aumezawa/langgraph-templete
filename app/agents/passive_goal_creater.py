@@ -1,10 +1,13 @@
 """
 passive-goal-creater.py
 
-Version : 1.4.0
+Version : 1.9.4
 Author  : aumezawa
 """
 
+from langchain_core.language_models import BaseChatModel
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
 
 
@@ -21,9 +24,6 @@ class Goal(BaseModel):
 
 class PassiveGoalCreater:
     """Passive Goal Creater Class."""
-
-    from langchain_core.language_models import BaseChatModel
-    from langchain_core.prompts import ChatPromptTemplate
 
     DEFAULT_LLM_MODEL = "gemini-2.5-flash"
 
@@ -43,8 +43,6 @@ class PassiveGoalCreater:
         model: BaseChatModel | None = None,
     ) -> None:
         """Initialize Passive Goal Creater."""
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
         self.model = model or ChatGoogleGenerativeAI(model=self.DEFAULT_LLM_MODEL)
 
     def run(self, query: str) -> Goal:

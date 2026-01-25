@@ -1,6 +1,6 @@
 [project]
 name = "langgraph-templete"
-version = "1.9.3"
+version = "1.9.4"
 description = "A template for langgraph projects"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -44,7 +44,6 @@ ignore = [
     "D413", # missing-blank-line-after-last-section
     "D415", # missing-terminal-punctuation
     "T201", # print
-    "PLC0415",  # import-outside-top-level
     "PLR091",   # too-many-arguments
 ]
 

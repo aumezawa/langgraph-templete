@@ -528,7 +528,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-templete"
-version = "1.9.3"
+version = "1.9.4"
 source = { virtual = "." }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
