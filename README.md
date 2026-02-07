@@ -17,7 +17,17 @@ uv sync
 ## Run
 
 ```shell
-uv run python ./app/main.py -a <agent>
+uv run python -m cli.query -a <agent> -q <query> -m [single|single-stream]
+```
+or
+```shell
+uv run python -m cli.query -a <agent> -m [multi|multi-stream]
+```
+
+## Run A2A server
+
+```shell
+uv run python -m cli.run_server -a <agent> -m [blocking|non-blocking|streaming]
 ```
 
 ## Debug

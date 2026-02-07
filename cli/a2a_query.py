@@ -1,7 +1,7 @@
 """
 rest_api.py
 
-Version : 1.9.0
+Version : 1.9.5
 Author  : aumezawa
 """
 
@@ -19,13 +19,13 @@ def get_agnet_card(
     route: str = "/.well-known/agent-card.json",
 ) -> tuple[str, bool]:
     """Get Agent Card."""
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=60) as client:
         response = client.get(f"{url}{route}")
         result = response.json()
         print("=== Get Agent Card ===")
         print(result)
         print()
-        return (result["url"], result["capabilities"]["streaming"])
+        return (result.get("url", ""), result.get("capabilities", {}).get("streaming", False))
 
 
 def make_message(
@@ -53,7 +53,7 @@ def get_task(
     api_version: str = "/v1",
 ) -> bool:
     """Get Task."""
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=60) as client:
         response = client.get(
             url=f"{url}{api_version}/tasks/{task_id}",
         )
@@ -61,7 +61,7 @@ def get_task(
         print(f"=== Get Task (task_id={task_id}) ===")
         print(result)
         print()
-        if result.get("status") and result["status"]["state"] in ["TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"]:
+        if result.get("status", {}).get("state", "") in ["TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"]:
             return True
     return False
 
@@ -74,7 +74,7 @@ def post_message(
     retry_out: int = 60,
 ) -> None:
     """Post Message."""
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=60) as client:
         response = client.post(
             url=f"{url}{api_version}/message:send",
             headers={
@@ -86,9 +86,9 @@ def post_message(
         print(f"=== Send Message (query={query}, context_id={context_id}) ===")
         print(result)
         print()
-        if result.get("task") and result["task"]["status"]["state"] in ["TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"]:
+        if result.get("task", {}).get("status", {}).get("state", "") in ["TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"]:
             for _ in range(retry_out):
-                if not get_task(url=url, task_id=result["task"]["id"]):
+                if not get_task(url=url, task_id=result.get("task", {}).get("id", "")):
                     break
                 time.sleep(1)
 
@@ -114,7 +114,7 @@ def post_message_stream(
             print()
 
 
-if __name__ == "__main__":
+def a2a_query() -> None:
     """Execute a selected function."""
     parser = argparse.ArgumentParser(description="Select to execute an agent.")
     parser.add_argument(
@@ -140,9 +140,19 @@ if __name__ == "__main__":
     if args.agent == "a2a_chatbot":
         url = "http://localhost:8000/a2a/chatbot"
         (url, streaming) = get_agnet_card(url)
+
+        if not url:
+            msg = "No url in the agent card."
+            raise ValueError(msg)
+
         if streaming:
             post_message_stream(url=url, query=args.query, context_id=args.context_id)
         else:
             post_message(url=url, query=args.query, context_id=args.context_id)
-    else:
-        print(parser.format_help())
+        return
+
+    print(parser.format_help())
+
+
+if __name__ == "__main__":
+    a2a_query()

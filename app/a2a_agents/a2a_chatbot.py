@@ -1,11 +1,11 @@
 """
 a2a_chatbot.py
 
-Version : 1.9.3
+Version : 1.9.5
 Author  : aumezawa
 """
 
-from typing import Any, Literal, override
+from typing import Literal, override
 
 import uvicorn
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -71,26 +71,28 @@ class A2aChatbotExecutor(AgentExecutor):
                 await event_queue.enqueue_event(task)
 
                 next_state = TaskState.completed
-                async for event in await self.agent.astream_run(
+                async for event, interrupt in self.agent.astream_run(
                     query=quary,
                     thread_id=context.context_id,
                     resume=(task_state == TaskState.input_required),
                 ):
-                    if event.get("__interrupt__") is not None:
+                    if isinstance(event, dict):
+                        continue
+
+                    if interrupt:
                         next_state = TaskState.input_required
                         break
 
-                    if event.get("chatbot") is not None:
-                        await event_queue.enqueue_event(
-                            TaskArtifactUpdateEvent(
-                                artifact=new_text_artifact(
-                                    name="answer",
-                                    text=event["chatbot"]["messages"][-1].content,
-                                ),
-                                context_id=task.context_id,
-                                task_id=task.id,
+                    await event_queue.enqueue_event(
+                        TaskArtifactUpdateEvent(
+                            artifact=new_text_artifact(
+                                name="answer",
+                                text=event,
                             ),
-                        )
+                            context_id=task.context_id,
+                            task_id=task.id,
+                        ),
+                    )
 
                 await event_queue.enqueue_event(
                     TaskStatusUpdateEvent(
@@ -108,24 +110,24 @@ class A2aChatbotExecutor(AgentExecutor):
                     task.artifacts = []
                     await event_queue.enqueue_event(task)
 
-                last_event: dict[str, Any] = {}
-                async for event in await self.agent.astream_run(
+                last_event = ("", False)
+                async for event, interrupt in self.agent.astream_run(
                     query=quary,
                     thread_id=context.context_id,
                     resume=(task_state == TaskState.input_required),
                 ):
-                    last_event = event
+                    if isinstance(event, dict):
+                        continue
+                    last_event = (event, interrupt)
 
-                if last_event.get("__interrupt__") is not None:
+                if last_event[1]:
                     task.status.state = TaskState.input_required
                     task.artifacts = []
                     await event_queue.enqueue_event(task)
 
-                if last_event.get("chatbot") is not None:
-                    answer = last_event["chatbot"]["messages"][-1].content
-                    task.status.state = TaskState.completed
-                    task.artifacts = [new_text_artifact(name="answer", text=answer)]
-                    await event_queue.enqueue_event(task)
+                task.status.state = TaskState.completed
+                task.artifacts = [new_text_artifact(name="answer", text=last_event[0])]
+                await event_queue.enqueue_event(task)
 
         except Exception as e:  # noqa: BLE001
             task.status.state = TaskState.failed
@@ -175,7 +177,7 @@ class A2aChatbot:
                     transport=self.mode,
                 ),
             ],
-            version="1.9.3",
+            version="1.9.5",
             capabilities=AgentCapabilities(
                 push_notifications=False,
                 state_transition_history=False,
