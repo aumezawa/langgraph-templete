@@ -1,16 +1,17 @@
 [project]
 name = "langgraph-templete"
-version = "1.9.5"
+version = "2.0.0"
 description = "A template for langgraph projects"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "a2a-sdk[http-server]>=0.3.22",
-    "dotenv>=0.9.9",
     "langchain-google-genai>=4.0.0",
     "langchain-mcp-adapters>=0.2.1",
     "langgraph>=1.0.4",
+    "loguru>=0.7.3",
     "pydantic>=2.12.5",
+    "python-dotenv>=1.2.1",
     "uvicorn>=0.40.0",
 ]
 
@@ -44,8 +45,12 @@ ignore = [
     "D413", # missing-blank-line-after-last-section
     "D415", # missing-terminal-punctuation
     "T201", # print
+    "BLE001",   # do-not-use-raw-exceptions
     "PLR091",   # too-many-arguments
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.format]
 quote-style = "double"

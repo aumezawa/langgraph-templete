@@ -1,16 +1,17 @@
 """
 a2a_chatbot.py
 
-Version : 1.9.5
+Version : 2.0.0
 Author  : aumezawa
 """
 
-from typing import Literal, override
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal, override
 
 import uvicorn
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.apps import A2AFastAPIApplication, A2ARESTFastAPIApplication
-from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import (
@@ -23,10 +24,14 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from a2a.utils import new_task, new_text_artifact
+from a2a.utils import new_agent_text_message, new_task, new_text_artifact
+from loguru import logger
 
 from app.agents.chatbot import Chatbot
-from app.tools.math import tools as math_tools
+from app.tools.currency_rate import tools as currency_rate_tools
+
+if TYPE_CHECKING:
+    from a2a.server.events import EventQueue
 
 HTTP_PROTOCOL: Literal["http", "https"] = "http"
 HTTP_HOST: str = "localhost"
@@ -42,10 +47,12 @@ class A2aChatbotExecutor(AgentExecutor):
         *,
         streaming: bool = False,
         blocking: bool = True,
+        strict: bool = False,
     ) -> None:
         """Initialize Chatbot Executor."""
         self.agent = Chatbot(
-            tools=math_tools,
+            tools=currency_rate_tools,
+            strict=strict,
         )
         self.streaming = streaming
         self.blocking = blocking
@@ -64,21 +71,24 @@ class A2aChatbotExecutor(AgentExecutor):
             task = new_task(context.message)  # type: ignore[arg-type]
         task_state = task.status.state
 
+        logger.debug(f"req, task: {task.id}, state: {task_state}, context: {task.context_id}, query: {quary}")
+
         try:
             # Streaming
             if self.streaming:
-                task.status.state = TaskState.working
-                await event_queue.enqueue_event(task)
+                if not self.blocking:
+                    task.status.state = TaskState.working
+                    task.artifacts = []
+                    await event_queue.enqueue_event(task)
+                    logger.debug(f"res, task: {task.id}, state: {task.status.state}, context: {task.context_id}")
 
                 next_state = TaskState.completed
                 async for event, interrupt in self.agent.astream_run(
                     query=quary,
-                    thread_id=context.context_id,
+                    thread_id=task.context_id,
                     resume=(task_state == TaskState.input_required),
+                    raw_output=False,
                 ):
-                    if isinstance(event, dict):
-                        continue
-
                     if interrupt:
                         next_state = TaskState.input_required
                         break
@@ -87,11 +97,15 @@ class A2aChatbotExecutor(AgentExecutor):
                         TaskArtifactUpdateEvent(
                             artifact=new_text_artifact(
                                 name="answer",
-                                text=event,
+                                text=str(event),
                             ),
                             context_id=task.context_id,
                             task_id=task.id,
                         ),
+                    )
+                    logger.debug(
+                        f"res, task: {task.id}, state: {task.status.state}, context: {task.context_id}, "
+                        f"artifacts: {task.artifacts}",
                     )
 
                 await event_queue.enqueue_event(
@@ -102,6 +116,7 @@ class A2aChatbotExecutor(AgentExecutor):
                         final=True,
                     ),
                 )
+                logger.debug(f"res, task: {task.id}, state: {task.status.state}, context: {task.context_id}")
 
             # Non-streaming
             else:
@@ -109,31 +124,50 @@ class A2aChatbotExecutor(AgentExecutor):
                     task.status.state = TaskState.working
                     task.artifacts = []
                     await event_queue.enqueue_event(task)
+                    logger.debug(f"res, task: {task.id}, state: {task.status.state}, context: {task.context_id}")
 
-                last_event = ("", False)
-                async for event, interrupt in self.agent.astream_run(
+                result, interrupt = await self.agent.async_run(
                     query=quary,
-                    thread_id=context.context_id,
+                    thread_id=task.context_id,
                     resume=(task_state == TaskState.input_required),
-                ):
-                    if isinstance(event, dict):
-                        continue
-                    last_event = (event, interrupt)
+                    raw_output=False,
+                )
 
-                if last_event[1]:
+                if interrupt:
                     task.status.state = TaskState.input_required
+                    task.status.message = new_agent_text_message(
+                        text=str(result),
+                        context_id=task.context_id,
+                        task_id=task.id,
+                    )
                     task.artifacts = []
                     await event_queue.enqueue_event(task)
+                    logger.debug(
+                        f"res, task: {task.id}, state: {task.status.state}, context: {task.context_id}, "
+                        f"message: {task.status.message}",
+                    )
+                else:
+                    task.status.state = TaskState.completed
+                    task.artifacts = [new_text_artifact(name="answer", text=str(result))]
+                    await event_queue.enqueue_event(task)
+                    logger.debug(
+                        f"res, task: {task.id}, state: {task.status.state}, context: {task.context_id}, "
+                        f"artifacts: {task.artifacts}",
+                    )
 
-                task.status.state = TaskState.completed
-                task.artifacts = [new_text_artifact(name="answer", text=last_event[0])]
-                await event_queue.enqueue_event(task)
-
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             task.status.state = TaskState.failed
+            task.status.message = new_agent_text_message(
+                text=f"Error occurred during agent execution: {e}",
+                context_id=task.context_id,
+                task_id=task.id,
+            )
             task.artifacts = []
-            task.metadata = {"error": str(e)}
             await event_queue.enqueue_event(task)
+            logger.debug(
+                f"res, task: {task.id}, state: {task.status.state}, context: {task.context_id}, "
+                f"artifacts: {task.artifacts}",
+            )
 
     @override
     async def cancel(
@@ -154,21 +188,22 @@ class A2aChatbot:
         mode: Literal["JSONRPC", "GRPC", "HTTP+JSON"] = "HTTP+JSON",
         streaming: bool = False,
         blocking: bool = True,
+        strict: bool = False,
     ) -> None:
         """Initialize A2A Chatbot."""
         self.mode = mode
         self.agent_skill = AgentSkill(
-            id="calculating",
-            name="calculating",
-            description="A chatbot that can answer questions and perform calculations.",
-            tags=["calculator"],
+            id="exchange_currency_rate",
+            name="exchange_currency_rate",
+            description="A chatbot that can exchange currency rates.",
+            tags=["currency_rate"],
             input_modes=["text", "text/plain"],
             output_modes=["text", "text/plain"],
-            examples=["100掛ける200を計算してください", "1足す2を計算してください"],
+            examples=["How much is 1 USD in JPY?"],
         )
         self.agent_card = AgentCard(
-            name="Calculating_Chatbot",
-            description="A chatbot that can answer questions and perform calculations.",
+            name="exchange_currency_rate_chatbot",
+            description="A chatbot that can answer questions and exchange currency rates.",
             url=f"{HTTP_PROTOCOL}://{HTTP_HOST}:{HTTP_PORT}{HTTP_ROUTE}",
             preferred_transport=self.mode,
             additional_interfaces=[
@@ -177,7 +212,7 @@ class A2aChatbot:
                     transport=self.mode,
                 ),
             ],
-            version="1.9.5",
+            version="2.0.0",
             capabilities=AgentCapabilities(
                 push_notifications=False,
                 state_transition_history=False,
@@ -188,7 +223,7 @@ class A2aChatbot:
             skills=[self.agent_skill],
             supports_authenticated_extended_card=False,
         )
-        self.agent_executor = A2aChatbotExecutor(streaming=streaming, blocking=blocking)
+        self.agent_executor = A2aChatbotExecutor(streaming=streaming, blocking=blocking, strict=strict)
 
     def run(
         self,

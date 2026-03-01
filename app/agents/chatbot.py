@@ -1,27 +1,31 @@
 """
 chatbot.py
 
-Version : 1.9.5
+Version : 2.0.0
 Author  : aumezawa
 """
 
-import functools
-from collections.abc import AsyncIterator
-from typing import Annotated, Any, TypedDict
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 from uuid import uuid4
 
-from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_core.runnables import Runnable, RunnableConfig
-from langchain_core.tools import BaseTool
+from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.types import Command, interrupt
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from langchain_core.language_models import BaseChatModel
+    from langchain_core.tools import BaseTool
+    from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint
+    from langgraph.graph.state import CompiledStateGraph
 
 
 ###
@@ -44,17 +48,19 @@ class Chatbot:
 
     NODE_START = START
     NODE_SETUP = "setup"
-    NODE_CHATBOT = "chatbot"
+    NODE_LLM = "llm"
     NODE_TOOLS = "tools"
     NODE_APPROVAL = "approval"
     NODE_END = END
 
     def __init__(
         self,
+        *,
         model: BaseChatModel | None = None,
         tools: list[BaseTool] | None = None,
         checkpointer: BaseCheckpointSaver[str] | None = None,
-        system_prompt: str = "Answer in Japanese.",
+        system_prompt: str = "Answer in English.",
+        strict: bool = False,
     ) -> None:
         """Initialize Chatbot."""
         self.model = model or ChatGoogleGenerativeAI(model=self.DEFAULT_LLM_MODEL)
@@ -65,7 +71,8 @@ class Chatbot:
         self.tools = tools or []
         self.checkpointer = checkpointer or InMemorySaver()
         self.system_prompt = system_prompt
-        self.graph = self._build_graph(self.llm)
+        self.strict = strict
+        self.graph = self._build_graph()
 
     def checkpoint(self, thread_id: str) -> Checkpoint | None:
         """Get Checkpointer."""
@@ -79,7 +86,7 @@ class Chatbot:
             ),
         )
 
-    def _build_graph(self, llm: Runnable[Any, Any] | None = None) -> CompiledStateGraph[Any, None, Any, Any]:
+    def _build_graph(self) -> CompiledStateGraph[Any, None, Any, Any]:
         """Build Chatbot Graph."""
         # Initialize Graph
         builder = StateGraph(ChatbotState)
@@ -94,9 +101,9 @@ class Chatbot:
                 "messages": messages,
             }
 
-        def _node_chatbot(state: ChatbotState, llm: Runnable[Any, Any]) -> dict[str, list[Any]]:
+        def _node_llm(state: ChatbotState) -> dict[str, list[Any]]:
             messages = [
-                llm.invoke(state["messages"]),
+                self.llm.invoke(state["messages"]),
             ]
 
             return {
@@ -112,10 +119,10 @@ class Chatbot:
             return self.NODE_END
 
         def _node_approval(state: ChatbotState) -> dict[str, list[Any]]:  # noqa: ARG001
-            approval = interrupt("Do you approve using an external tool? [yes/no]")
+            approval = interrupt("Do you approve using an external tool? [yes/no]") if self.strict else "yes"
 
             messages = []
-            if str(approval).upper() == "NO":
+            if str(approval).upper() != "YES":
                 messages.append(HumanMessage(content="Don't use any external tools."))
 
             return {
@@ -123,15 +130,15 @@ class Chatbot:
             }
 
         builder.add_node(self.NODE_SETUP, _node_setup)
-        builder.add_node(self.NODE_CHATBOT, functools.partial(_node_chatbot, llm=(llm or self.llm)))
+        builder.add_node(self.NODE_LLM, _node_llm)
         builder.add_node(self.NODE_TOOLS, ToolNode(self.tools))
         builder.add_node(self.NODE_APPROVAL, _node_approval)
 
         builder.add_edge(self.NODE_START, self.NODE_SETUP)
-        builder.add_edge(self.NODE_SETUP, self.NODE_CHATBOT)
-        builder.add_conditional_edges(self.NODE_CHATBOT, _node_router)
+        builder.add_edge(self.NODE_SETUP, self.NODE_LLM)
+        builder.add_conditional_edges(self.NODE_LLM, _node_router)
         builder.add_edge(self.NODE_APPROVAL, self.NODE_TOOLS)
-        builder.add_edge(self.NODE_TOOLS, self.NODE_CHATBOT)
+        builder.add_edge(self.NODE_TOOLS, self.NODE_LLM)
 
         return builder.compile(checkpointer=self.checkpointer)
 
@@ -140,19 +147,12 @@ class Chatbot:
         query: str,
         *,
         thread_id: str | None = None,
-        llm: Runnable[Any, Any] | None = None,
+        resume: bool = False,
         raw_output: bool = False,
-    ) -> str | dict[str, Any]:
+    ) -> tuple[str | dict[str, Any], bool]:
         """Run Chatbot."""
-        if llm:
-            self.graph = self._build_graph(llm)
-        elif not hasattr(self, "graph"):
-            self.graph = self._build_graph(self.llm)
-
         result = await self.graph.ainvoke(
-            input={
-                "query": query,
-            },
+            input={"query": query} if not resume else Command(resume=query),
             config=RunnableConfig(
                 {
                     "configurable": {
@@ -163,7 +163,10 @@ class Chatbot:
         )
 
         if raw_output:
-            return result
+            return (result, bool(result.get("__interrupt__")))
+
+        if result.get("__interrupt__") is not None:
+            return (result.get("__interrupt__", ["no messages."])[0].value, True)
 
         content = result.get("messages", [])[-1].content
         return (
@@ -171,7 +174,8 @@ class Chatbot:
             if isinstance(content, str)
             else " ".join(
                 [str(chunk) if isinstance(chunk, str) else chunk.get("text", "") for chunk in content],
-            )
+            ),
+            False,
         )
 
     async def astream_run(
@@ -180,15 +184,9 @@ class Chatbot:
         *,
         thread_id: str | None = None,
         resume: bool = False,
-        llm: Runnable[Any, Any] | None = None,
         raw_output: bool = False,
     ) -> AsyncIterator[tuple[str | dict[str, Any], bool]]:
         """Run Chatbot."""
-        if llm:
-            self.graph = self._build_graph(llm)
-        elif not hasattr(self, "graph"):
-            self.graph = self._build_graph(self.llm)
-
         async for event in self.graph.astream(
             input={"query": query} if not resume else Command(resume=query),
             config=RunnableConfig(
@@ -204,7 +202,7 @@ class Chatbot:
                 continue
 
             if event.get("__interrupt__") is not None:
-                yield (event.get("__interrupt__", [])[0].value, True)
+                yield (event.get("__interrupt__", ["no messages."])[0].value, True)
                 continue
 
             messages = next(iter(event.values())).get("messages", [])

@@ -5,15 +5,19 @@ Version : 1.6.0
 Author  : aumezawa
 """
 
-from typing import Literal
+from __future__ import annotations
 
-from langchain_core.tools import BaseTool
+from typing import TYPE_CHECKING, Literal
+
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.sessions import Connection, SSEConnection, StreamableHttpConnection
 
+if TYPE_CHECKING:
+    from langchain_core.tools import BaseTool
 
-class McpClient:
-    """MCP Client Class."""
+
+class McpServer:
+    """MCP Server Class."""
 
     def __init__(
         self,
